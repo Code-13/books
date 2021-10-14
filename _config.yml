@@ -108,5 +108,5 @@ theme: yet-the-books
 ## Docs: https://hexo.io/docs/one-command-deployment
 deploy:
   type: git
-  repository: git@github.com:Code-13/Code-13.github.io.books.git
+  repository: git@github.com:Code-13/books.git
   branch: gh-pages
