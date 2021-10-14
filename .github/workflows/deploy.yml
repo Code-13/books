@@ -32,7 +32,7 @@ jobs:
       env:
         GIT_NAME: code-13
         GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
-        REPO: github.com/code-13/code-13.github.io
+        REPO: github.com/code-13/books
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         cd ./public && git init -b gh-pages && git add .
