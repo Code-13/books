@@ -8,7 +8,7 @@ head: '<!--<script src="" async></script>-->' # Add anything to <head></head>
 
 archives:
   switch: true # true,false Switching this function.
-  categories: [心理学] # Only the categories you set will be displayed on the archive page.
+  categories: [] # Only the categories you set will be displayed on the archive page.
 
 menu:
   归档: archives
