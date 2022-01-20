@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		
+<title>第三部分 活跃性、性能与测试 - 代号十三</title>
+<meta charset="utf-8" />
+<meta name="keywords" content="" />
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=5"
+/>
+<meta name="generator" content="Hexo 5.4.0">
+<link rel="stylesheet" href="/books/css/style.css?v=1642672385226">
+<link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
+<link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css?family=Noto+Serif+SC&display=swap"
+    media="all"
+/>
+<link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/highlight.js@9.15.8/styles/solarized-light.css"
+/>
+<script src="/books/js/core.js?v=1642672385226"></script>
+
+
+
+
+
+
+    <!-- baidu Analytics -->
+<script>
+    var _hmt = _hmt || [];
+    (function() {var hm = document.createElement('script');
+    hm.src = 'https://hm.baidu.com/hm.js?41b04999ee3d67f2acc9ce741045e68d';
+    var s = document.getElementsByTagName('script')[0];
+        s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/lazysizes@5.3.1/lazysizes.min.js" async></script>
+<!--<script src="" async></script>--> 
+	</head>
+
+	<body>
+        <div class="header  ">
+    <div class="container">
+        <a class="logo" href="/books/" title="代号十三">代号十三</a>
+        <ul class="nav">
+            
+                <li class="nav-item"><a href="/books/archives">归档</a></li>
+            
+        </ul>
+    </div>
+</div>
+        <div class="content">
+	<div class="banner">
+		<div class="container">
+			<h1>第三部分 活跃性、性能与测试</h1>
+			<div class="info"><span class="date">2021年11月15日</span>•代号十三 
+			
+					《<a class="nexmoefont icon-appstore-fill -link" href="/books/categories/Java-%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E5%AE%9E%E6%88%98/">Java 并发编程实战</a>》
+				
+				
+			</div>
+			
+		</div>
+	</div>
+	<div class="container">
+		<article class="post">
+			<h1 id="第三部分-活跃性、性能与测试"><a href="#第三部分-活跃性、性能与测试" class="headerlink" title="第三部分 活跃性、性能与测试"></a>第三部分 活跃性、性能与测试</h1><h2 id="避免活跃性危险"><a href="#避免活跃性危险" class="headerlink" title="避免活跃性危险"></a>避免活跃性危险</h2><p>在安全性与活跃性之间通常存在着某种制衡。我们使用加锁机制来确保线程安全，但如果过度地使用加锁，则可能导致锁顺序死锁（Lock-OrderingDeadlock）。同样，我们使用线程池和信号量来限制对资源的使用，但这些被限制的行为可能会导致资源死锁（Resource Deadlock）。</p>
+<p>本章将介绍一些导致活跃性故障的原因，以及如何避免它们。</p>
+<h3 id="死锁"><a href="#死锁" class="headerlink" title="死锁"></a>死锁</h3><p>每个人都拥有其他人需要的资源，同时又等待其他人已经拥有的资源，并且每个人在获得所有需要的资源之前都不会放弃已经拥有的资源。</p>
+<p>当一个线程永远地持有一个锁，并且其他线程都尝试获得这个锁时，那么它们将永远被阻塞。</p>
+<p>在线程A持有锁L并想获得锁M的同时，线程B持有锁M并尝试获得锁L，那么这两个线程将永远地等待下去。这种情况就是最简单的死锁形式（或者称为“抱死[Deadly Embrace]”），其中多个线程由于存在环路的锁依赖关系而永远地等待下去。</p>
+<blockquote>
+<p>在数据库系统的设计中考虑了监测死锁以及从死锁中恢复。在执行一个事务（Transaction）时可能需要获取多个锁，并一直持有这些锁直到事务提交。因此在两个事务之间很可能发生死锁，但事实上这种情况并不多见。如果没有外部干涉，那么这些事务将永远等待下去（在某个事务中持有的锁可能在其他事务中也需要）。但数据库服务器不会让这种情况发生。当它检测到一组事务发生了死锁时（通过在表示等待关系的有向图中搜索循环），将选择一个牺牲者并放弃这个事务。作为牺牲者的事务会释放它所持有的资源，从而使其他事务继续进行。应用程序可以重新执行被强行中止的事务，而这个事务现在可以成功完成，因为所有跟它竞争资源的事务都已经完成了。</p>
+<p>JVM在解决死锁问题方面并没有数据库服务那样强大。当一组Java线程发生死锁时，“游戏”将到此结束——这些线程永远不能再使用了。根据线程完成工作的不同，可能造成应用程序完全停止，或者某个特定的子系统停止，或者是性能降低。恢复应用程序的唯一方式就是中止并重启它，并希望不要再发生同样的事情。</p>
+</blockquote>
+<ul>
+<li>与许多其他的并发危险一样，死锁造成的影响很少会立即显现出来。</li>
+<li>如果一个类可能发生死锁，那么并不意味着每次都会发生死锁，而只是表示有可能。</li>
+<li>当死锁出现时，往往是在最糟糕的时候——在高负载情况下。</li>
+</ul>
+<h4 id="锁顺序死锁"><a href="#锁顺序死锁" class="headerlink" title="锁顺序死锁"></a>锁顺序死锁</h4><p>示例 LeftRightDeadLock 存在死锁风险。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-meta">@Terrible</span><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">LeftRightDeadLock</span> </span>&#123;<br><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Object left = <span class="hljs-keyword">new</span> Object();<br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Object right = <span class="hljs-keyword">new</span> Object();<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">leftRight</span><span class="hljs-params">()</span> </span>&#123;<br>    <span class="hljs-keyword">synchronized</span> (left) &#123;<br>      <span class="hljs-keyword">synchronized</span> (right) &#123;<br>        doSomething();<br>      &#125;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">rightLeft</span><span class="hljs-params">()</span> </span>&#123;<br>    <span class="hljs-keyword">synchronized</span> (right) &#123;<br>      <span class="hljs-keyword">synchronized</span> (left) &#123;<br>        doSomethingElse();<br>      &#125;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">doSomething</span><span class="hljs-params">()</span> </span>&#123;&#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">void</span> <span class="hljs-title">doSomethingElse</span><span class="hljs-params">()</span> </span>&#123;&#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>leftRight和rightLeft这两个方法分别获得left锁和right锁。如果一个线程调用了leftRight，而另一个线程调用了rightLeft，并且这两个线程的操作是交错执行，那么它们会发生死锁。如图所示：</p>
+<p><img src="https://cdn.jsdelivr.net/gh/code-13/cloudimage/images/2021/12/16/20211216120720.png" alt="image-20211216120719866"></p>
+<p>在LeftRightDeadlock中发生死锁的原因是：<strong>两个线程试图以不同的顺序来获得相同的锁。</strong></p>
+<p>如果按照相同的顺序来请求锁，那么就不会出现循环的加锁依赖性，因此也就不会产生死锁。如果每个需要锁L和锁M的线程都以相同的顺序来获取L和M，那么就不会发生死锁了。<strong>如果所有线程以固定的顺序来获得锁，那么在程序中就不会出现锁顺序死锁问题。</strong></p>
+<p><strong>要想验证锁顺序的一致性，需要对程序中的加锁行为进行全局分析。如果只是单独地分析每条获取多个锁的代码路径，那是不够的。</strong></p>
+<h4 id="动态的锁顺序死锁"><a href="#动态的锁顺序死锁" class="headerlink" title="动态的锁顺序死锁"></a>动态的锁顺序死锁</h4><p>有时候，并不能清楚地知道是否在锁顺序上有足够的控制权来避免死锁的发生。如示例 <code>DynamicOrderDeadlock</code> 所示：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-meta">@Terrible</span><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">DynamicOrderDeadlock</span> </span>&#123;<br><br>  <span class="hljs-comment">// Warning: deadlock-prone!</span><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title">transferMoney</span><span class="hljs-params">(Account fromAccount, Account toAccount, DollarAmount amount)</span></span><br><span class="hljs-function">      <span class="hljs-keyword">throws</span> InsufficientFundsException </span>&#123;<br>    <span class="hljs-keyword">synchronized</span> (fromAccount) &#123;<br>      <span class="hljs-keyword">synchronized</span> (toAccount) &#123;<br>        <span class="hljs-keyword">if</span> (fromAccount.getBalance().compareTo(amount) &lt; <span class="hljs-number">0</span>) &#123;<br>          <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> InsufficientFundsException();<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>          fromAccount.debit(amount);<br>          toAccount.credit(amount);<br>        &#125;<br>      &#125;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">DollarAmount</span> <span class="hljs-keyword">implements</span> <span class="hljs-title">Comparable</span>&lt;<span class="hljs-title">DollarAmount</span>&gt; </span>&#123;<br>    <span class="hljs-comment">// Needs implementation</span><br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">DollarAmount</span><span class="hljs-params">(<span class="hljs-keyword">int</span> amount)</span> </span>&#123;&#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> DollarAmount <span class="hljs-title">add</span><span class="hljs-params">(DollarAmount d)</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> DollarAmount <span class="hljs-title">subtract</span><span class="hljs-params">(DollarAmount d)</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;<br>    &#125;<br><br>    <span class="hljs-meta">@Override</span><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">int</span> <span class="hljs-title">compareTo</span><span class="hljs-params">(DollarAmount dollarAmount)</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Account</span> </span>&#123;<br>    <span class="hljs-keyword">private</span> DollarAmount balance;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> acctNo;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> AtomicInteger sequence = <span class="hljs-keyword">new</span> AtomicInteger();<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Account</span><span class="hljs-params">()</span> </span>&#123;<br>      acctNo = sequence.incrementAndGet();<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">debit</span><span class="hljs-params">(DollarAmount d)</span> </span>&#123;<br>      balance = balance.subtract(d);<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">credit</span><span class="hljs-params">(DollarAmount d)</span> </span>&#123;<br>      balance = balance.add(d);<br>    &#125;<br><br>    <span class="hljs-function">DollarAmount <span class="hljs-title">getBalance</span><span class="hljs-params">()</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> balance;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">getAcctNo</span><span class="hljs-params">()</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> acctNo;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">InsufficientFundsException</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Exception</span> </span>&#123;&#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>在transferMoney中如何发生死锁？所有的线程似乎都是按照相同的顺序来获得锁，但事实上锁的顺序取决于传递给transferMoney的参数顺序，而这些参数顺序又取决于外部输入。如果两个线程同时调用transferMoney，其中一个线程从X向Y转账，另一个线程从Y向X转账，那么就会发生死锁：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><code class="hljs java">A：transferMoney（myAccount, yourAccount，<span class="hljs-number">10</span>）；<br>B：transferMoney（yourAccount, myAccount，<span class="hljs-number">20</span>）；<br></code></pre></td></tr></table></figure>
+
+<p>如果执行时序不当，那么A可能获得myAccount的锁并等待yourAccount的锁，然而B此时持有yourAccount的锁，并正在等待myAccount的锁。</p>
+<p>由于我们无法控制参数的顺序，因此<strong>要解决这个问题，必须定义锁的顺序，并在整个应用程序中都按照这个顺序来获取锁。</strong></p>
+<p>在制定锁的顺序时，可以使用System.identityHashCode方法，该方法将返回由Object.hashCode返回的值。示例给出了另一个版本的transferMoney，在该版本中使用了System.identityHashCode来定义锁的顺序。虽然增加了一些新的代码，但却消除了发生死锁的可能性。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-comment">//通过锁顺序来避免死锁</span><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">InduceLockOrder</span> </span>&#123;<br><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> Object tieLock = <span class="hljs-keyword">new</span> Object();<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">transferMoney</span><span class="hljs-params">(Account fromAcct, Account toAcct, DollarAmount amount)</span></span><br><span class="hljs-function">      <span class="hljs-keyword">throws</span> InsufficientFundsException </span>&#123;<br>    <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Helper</span> </span>&#123;<br>      <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">transfer</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> InsufficientFundsException </span>&#123;<br>        <span class="hljs-keyword">if</span> (fromAcct.getBalance().compareTo(amount) &lt; <span class="hljs-number">0</span>) &#123;<br>          <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> InsufficientFundsException();<br>        &#125; <span class="hljs-keyword">else</span> &#123;<br>          fromAcct.debit(amount);<br>          toAcct.credit(amount);<br>        &#125;<br>      &#125;<br>    &#125;<br>    <span class="hljs-keyword">int</span> fromHash = System.identityHashCode(fromAcct);<br>    <span class="hljs-keyword">int</span> toHash = System.identityHashCode(toAcct);<br><br>    <span class="hljs-keyword">if</span> (fromHash &lt; toHash) &#123;<br>      <span class="hljs-keyword">synchronized</span> (fromAcct) &#123;<br>        <span class="hljs-keyword">synchronized</span> (toAcct) &#123;<br>          <span class="hljs-keyword">new</span> Helper().transfer();<br>        &#125;<br>      &#125;<br>    &#125; <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (fromHash &gt; toHash) &#123;<br>      <span class="hljs-keyword">synchronized</span> (toAcct) &#123;<br>        <span class="hljs-keyword">synchronized</span> (fromAcct) &#123;<br>          <span class="hljs-keyword">new</span> Helper().transfer();<br>        &#125;<br>      &#125;<br>    &#125; <span class="hljs-keyword">else</span> &#123;<br>      <span class="hljs-keyword">synchronized</span> (tieLock) &#123;<br>        <span class="hljs-keyword">synchronized</span> (fromAcct) &#123;<br>          <span class="hljs-keyword">synchronized</span> (toAcct) &#123;<br>            <span class="hljs-keyword">new</span> Helper().transfer();<br>          &#125;<br>        &#125;<br>      &#125;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">DollarAmount</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Comparable</span>&lt;<span class="hljs-title">DollarAmount</span>&gt; </span>&#123;&#125;<br><br>  <span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-title">Account</span> </span>&#123;<br>    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">debit</span><span class="hljs-params">(DollarAmount d)</span></span>;<br><br>    <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">credit</span><span class="hljs-params">(DollarAmount d)</span></span>;<br><br>    <span class="hljs-function">DollarAmount <span class="hljs-title">getBalance</span><span class="hljs-params">()</span></span>;<br><br>    <span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">getAcctNo</span><span class="hljs-params">()</span></span>;<br>  &#125;<br><br>  <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">InsufficientFundsException</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Exception</span> </span>&#123;&#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p><strong>在极少数情况下，两个对象可能拥有相同的散列值，此时必须通过某种任意的方法来决定锁的顺序，而这可能又会重新引入死锁。为了避免这种情况，可以使用“加时赛（Tie-Breaking）”锁。</strong>在获得两个Account锁之前，首先获得这个“加时赛”锁，从而保证每次只有一个线程以未知的顺序获得这两个锁，从而消除了死锁发生的可能性（只要一致地使用这种机制）。</p>
+<p>如果在Account中包含一个唯一的、不可变的，并且具备可比性的键值，例如账号，那么要制定锁的顺序就更加容易了：<strong>通过键值对对象进行排序，因而不需要使用“加时赛”锁。</strong></p>
+<h4 id="在协作对象之间发生的死锁"><a href="#在协作对象之间发生的死锁" class="headerlink" title="在协作对象之间发生的死锁"></a>在协作对象之间发生的死锁</h4><p>示例 <code>CooperatingDeadlock</code> 如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CooperatingDeadlock</span> </span>&#123;<br><br>  <span class="hljs-comment">// Warning: deadlock-prone!</span><br>  <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Taxi</span> </span>&#123;<br>    <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>    <span class="hljs-keyword">private</span> Point location, destination;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Dispatcher dispatcher;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Taxi</span><span class="hljs-params">(Dispatcher dispatcher)</span> </span>&#123;<br>      <span class="hljs-keyword">this</span>.dispatcher = dispatcher;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> Point <span class="hljs-title">getLocation</span><span class="hljs-params">()</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> location;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setLocation</span><span class="hljs-params">(Point location)</span> </span>&#123;<br>      <span class="hljs-keyword">this</span>.location = location;<br>      <span class="hljs-keyword">if</span> (location.equals(destination)) &#123;<br>        dispatcher.notifyAvailable(<span class="hljs-keyword">this</span>);<br>      &#125;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> Point <span class="hljs-title">getDestination</span><span class="hljs-params">()</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> destination;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setDestination</span><span class="hljs-params">(Point destination)</span> </span>&#123;<br>      <span class="hljs-keyword">this</span>.destination = destination;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Dispatcher</span> </span>&#123;<br>    <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Set&lt;Taxi&gt; taxis;<br><br>    <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Set&lt;Taxi&gt; availableTaxis;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Dispatcher</span><span class="hljs-params">()</span> </span>&#123;<br>      taxis = <span class="hljs-keyword">new</span> HashSet&lt;Taxi&gt;();<br>      availableTaxis = <span class="hljs-keyword">new</span> HashSet&lt;Taxi&gt;();<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">notifyAvailable</span><span class="hljs-params">(Taxi taxi)</span> </span>&#123;<br>      availableTaxis.add(taxi);<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> Image <span class="hljs-title">getImage</span><span class="hljs-params">()</span> </span>&#123;<br>      Image image = <span class="hljs-keyword">new</span> Image();<br>      <span class="hljs-keyword">for</span> (Taxi t : taxis) &#123;<br>        image.drawMarker(t.getLocation());<br>      &#125;<br>      <span class="hljs-keyword">return</span> image;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Image</span> </span>&#123;<br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">drawMarker</span><span class="hljs-params">(Point p)</span> </span>&#123;&#125;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>尽管没有任何方法会显式地获取两个锁，但setLocation和getImage等方法的调用者都会获得两个锁。</p>
+<p>如果一个线程在收到GPS接收器的更新事件时调用setLocation，那么它将首先更新出租车的位置，然后判断它是否到达了目的地。如果已经到达，它会通知Dispatcher：它需要一个新的目的地。因为setLocation和notifyAvailable都是同步方法，因此调用setLocation的线程将首先获取Taxi的锁，然后获取Dispatcher的锁。</p>
+<p>同样，调用getImage的线程将首先获取Dispatcher锁，然后再获取每一个Taxi的锁（每次获取一个）。</p>
+<p>这与LeftRightDeadlock中的情况相同，两个线程按照不同的顺序来获取两个锁，因此就可能产生死锁。</p>
+</blockquote>
+<p><strong>如果在持有锁时调用某个外部方法，那么将出现活跃性问题。在这个外部方法中可能会获取其他锁（这可能会产生死锁），或者阻塞时间过长，导致其他线程无法及时获得当前被持有的锁。</strong></p>
+<h4 id="开放调用"><a href="#开放调用" class="headerlink" title="开放调用"></a>开放调用</h4><p><strong>如果在调用某个方法时不需要持有锁，那么这种调用被称为开放调用（OpenCall）[CPJ 2.4.1.3]。</strong>依赖于开放调用的类通常能表现出更好的行为，并且与那些在调用方法时需要持有锁的类相比，也更易于编写。</p>
+<p>通过尽可能地使用开放调用，将更易于找出那些需要获取多个锁的代码路径，因此也就更容易确保采用一致的顺序来获得锁。</p>
+<p>示例：<code>通过公开调用来避免在相互协作的对象之间产生死锁</code>：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CooperatingNoDeadlock</span> </span>&#123;<br><br>  <span class="hljs-meta">@ThreadSafe</span><br>  <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Taxi</span> </span>&#123;<br>    <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>    <span class="hljs-keyword">private</span> Point location, destination;<br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Dispatcher dispatcher;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Taxi</span><span class="hljs-params">(Dispatcher dispatcher)</span> </span>&#123;<br>      <span class="hljs-keyword">this</span>.dispatcher = dispatcher;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> Point <span class="hljs-title">getLocation</span><span class="hljs-params">()</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> location;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setLocation</span><span class="hljs-params">(Point location)</span> </span>&#123;<br>      <span class="hljs-keyword">boolean</span> reachedDestination;<br>      <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;<br>        <span class="hljs-keyword">this</span>.location = location;<br>        reachedDestination = location.equals(destination);<br>      &#125;<br>      <span class="hljs-keyword">if</span> (reachedDestination) &#123;<br>        dispatcher.notifyAvailable(<span class="hljs-keyword">this</span>);<br>      &#125;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> Point <span class="hljs-title">getDestination</span><span class="hljs-params">()</span> </span>&#123;<br>      <span class="hljs-keyword">return</span> destination;<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">setDestination</span><span class="hljs-params">(Point destination)</span> </span>&#123;<br>      <span class="hljs-keyword">this</span>.destination = destination;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-meta">@ThreadSafe</span><br>  <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Dispatcher</span> </span>&#123;<br>    <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Set&lt;Taxi&gt; taxis;<br><br>    <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>    <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Set&lt;Taxi&gt; availableTaxis;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">Dispatcher</span><span class="hljs-params">()</span> </span>&#123;<br>      taxis = <span class="hljs-keyword">new</span> HashSet&lt;Taxi&gt;();<br>      availableTaxis = <span class="hljs-keyword">new</span> HashSet&lt;Taxi&gt;();<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">notifyAvailable</span><span class="hljs-params">(Taxi taxi)</span> </span>&#123;<br>      availableTaxis.add(taxi);<br>    &#125;<br><br>    <span class="hljs-function"><span class="hljs-keyword">public</span> Image <span class="hljs-title">getImage</span><span class="hljs-params">()</span> </span>&#123;<br>      Set&lt;Taxi&gt; copy;<br>      <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;<br>        copy = <span class="hljs-keyword">new</span> HashSet&lt;Taxi&gt;(taxis);<br>      &#125;<br>      Image image = <span class="hljs-keyword">new</span> Image();<br>      <span class="hljs-keyword">for</span> (Taxi t : copy) &#123;<br>        image.drawMarker(t.getLocation());<br>      &#125;<br>      <span class="hljs-keyword">return</span> image;<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Image</span> </span>&#123;<br>    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">drawMarker</span><span class="hljs-params">(Point p)</span> </span>&#123;&#125;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>在程序中应尽量使用开放调用。与那些在持有锁时调用外部方法的程序相比，更易于对依赖于开放调用的程序进行死锁分析。</p>
+<p>有时候，在重新编写同步代码块以使用开放调用时会产生意想不到的结果，因为这会使得某个原子操作变为非原子操作。在许多情况下，使某个操作失去原子性是可以接受的。然而，在某些情况下，丢失原子性会引发错误，此时需要通过另一种技术来实现原子性。但是这项技术依赖于构造一些协议（而不是通过加锁）来防止其他线程进入代码的临界区。</p>
+<h4 id="资源死锁"><a href="#资源死锁" class="headerlink" title="资源死锁"></a>资源死锁</h4><p>正如当多个线程相互持有彼此正在等待的锁而又不释放自己已持有的锁时会发生死锁，当它们在相同的资源集合上等待时，也会发生死锁。</p>
+<p>另一种基于资源的死锁形式就是线程饥饿死锁（Thread-StarvationDeadlock）。如果某些任务需要等待其他任务的结果，那么这些任务往往是产生线程饥饿死锁的主要来源，有界线程池/资源池与相互依赖的任务不能一起使用。</p>
+<h3 id="死锁的避免与诊断"><a href="#死锁的避免与诊断" class="headerlink" title="死锁的避免与诊断"></a>死锁的避免与诊断</h3><p>如果一个程序每次<strong>至多只能获得一个锁</strong>，那么就不会产生锁顺序死锁。当然，这种情况通常并不现实，但如果能够避免这种情况，那么就能省去很多工作。<strong>如果必须获取多个锁，那么在设计时必须考虑锁的顺序：尽量减少潜在的加锁交互数量，将获取锁时需要遵循的协议写入正式文档并始终遵循这些协议。</strong></p>
+<p><strong>在使用细粒度锁的程序中，可以通过使用一种两阶段策略（Two-PartStrategy）来检查代码中的死锁</strong>：首先，找出在什么地方将获取多个锁（使这个集合尽量小），然后对所有这些实例进行全局分析，从而确保它们在整个程序中获取锁的顺序都保持一致。</p>
+<p><strong>尽可能地使用开放调用，这能极大地简化分析过程。</strong>如果所有的调用都是开放调用，那么要发现获取多个锁的实例是非常简单的，可以通过代码审查，或者借助自动化的源代码分析工具。</p>
+<h4 id="支持定时的锁"><a href="#支持定时的锁" class="headerlink" title="支持定时的锁"></a>支持定时的锁</h4><p><strong>还有一项技术可以检测死锁和从死锁中恢复过来，即显式使用Lock类中的定时tryLock功能来代替内置锁机制。</strong>当使用内置锁时，只要没有获得锁，就会永远等待下去，而显式锁则可以指定一个超时时限（Timeout），在等待超过该时间后tryLock会返回一个失败信息。如果超时时限比获取锁的时间要长很多，那么就可以在发生某个意外情况后重新获得控制权。</p>
+<p>当定时锁失败时，你并不需要知道失败的原因。或许是因为发生了死锁，或许某个线程在持有锁时错误地进入了无限循环，还可能是某个操作的执行时间远远超过了你的预期。然而，至少你能记录所发生的失败，以及关于这次操作的其他有用信息，并通过一种更平缓的方式来重新启动计算，而不是关闭整个进程。</p>
+<p>即使在整个系统中没有始终使用定时锁，使用定时锁来获取多个锁也能有效地应对死锁问题。如果在获取锁时超时，那么可以释放这个锁，然后后退并在一段时间后再次尝试，从而消除了死锁发生的条件，使程序恢复过来。</p>
+<h4 id="通过线程转储信息来分析死锁"><a href="#通过线程转储信息来分析死锁" class="headerlink" title="通过线程转储信息来分析死锁"></a>通过线程转储信息来分析死锁</h4><p>虽然防止死锁的主要责任在于你自己，但JVM仍然通过线程转储（ThreadDump）来帮助识别死锁的发生。</p>
+<p>线程转储包括各个运行中的线程的栈追踪信息，这类似于发生异常时的栈追踪信息。线程转储还包含加锁信息，例如每个线程持有了哪些锁，在哪些栈帧中获得这些锁，以及被阻塞的线程正在等待获取哪一个锁。(即使没有死锁，这些信息对于调试来说也是有用的。通过定期触发线程转储，可以观察程序的加锁行为。)</p>
+<p>如果使用显式的Lock类而不是内部锁，那么Java 5.0并不支持与Lock相关的转储信息，在线程转储中不会出现显式的Lock。虽然Java 6中包含对显式Lock的线程转储和死锁检测等的支持，但在这些锁上获得的信息比在内置锁上获得的信息精确度低。内置锁与获得它们所在的线程栈帧是相关联的，而显式的Lock只与获得它的线程相关联。</p>
+<p>下列示例:</p>
+<blockquote>
+<p>给出了一个J2EE应用程序中获取的部分线程转储信息。在导致死锁的故障中包括3个组件：一个J2EE应用程序，一个J2EE容器，以及一个JDBC驱动程序，分别由不同的生产商提供。这3个组件都是商业产品，并经过了大量的测试，但每一个组件中都存在一个错误，并且这个错误只有当它们进行交互时才会显现出来，并导致服务器出现一个严重的故障。</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java">Found one Java-level deadlock：<br>=============================<br><span class="hljs-string">&quot;ApplicationServerThread&quot;</span>：<br>  waiting to lock monitor <span class="hljs-number">0x080f0cdc</span>（a MumbleDBConnection），<br>  which is held by<span class="hljs-string">&quot;ApplicationServerThread&quot;</span><br><span class="hljs-string">&quot;ApplicationServerThread&quot;</span>：<br>  waiting to lock monitor <span class="hljs-number">0x080f0ed4</span>（aMumbleDBCallableStatement），<br>  which is held by<span class="hljs-string">&quot;ApplicationServerThread&quot;</span><br>  <br>Java stack information <span class="hljs-keyword">for</span> the threads listed above：<br>  <span class="hljs-string">&quot;ApplicationServerThread&quot;</span>：<br>  at MumbleDBConnection.remove_statement<br>  -waiting to lock＜<span class="hljs-number">0x650f7f30</span>＞（a MumbleDBConnection）at MumbleDBStatement.close<br>  -locked＜<span class="hljs-number">0x6024ffb0</span>＞（a MumbleDBCallableStatement）<br>  ...<br><span class="hljs-string">&quot;ApplicationServerThread&quot;</span>：<br>  at MumbleDBCallableStatement.sendBatch<br>  -waiting to lock＜<span class="hljs-number">0x6024ffb0</span>＞（a MumbleDBCallableStatement）at MumbleDBConnection.commit<br>  -locked＜<span class="hljs-number">0x650f7f30</span>＞（a MumbleDBConnection）<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>当诊断死锁时，JVM可以帮我们做许多工作——哪些锁导致了这个问题，涉及哪些线程，它们持有哪些其他的锁，以及是否间接地给其他线程带来了不利影响。其中一个线程持有MumbleDBConnection上的锁，并等待获得MumbleDBCallableStatement上的锁，而另一个线程则持有MumbleDBCallableStatement上的锁，并等待MumbleDBConnection上的锁。</p>
+</blockquote>
+<h3 id="其它活跃性危险"><a href="#其它活跃性危险" class="headerlink" title="其它活跃性危险"></a>其它活跃性危险</h3><p>尽管死锁是最常见的活跃性危险，但在并发程序中还存在一些其他的活跃性危险，包括：</p>
+<ul>
+<li>饥饿</li>
+<li>丢失信号（“丢失信号”这种活跃性危险将在14.2.3节中介绍。）</li>
+<li>活锁</li>
+</ul>
+<h4 id="饥饿"><a href="#饥饿" class="headerlink" title="饥饿"></a>饥饿</h4><p>当线程由于无法访问它所需要的资源而不能继续执行时，就发生了“饥饿（Starvation）”</p>
+<p>引发饥饿：</p>
+<ul>
+<li>最常见资源就是CPU时钟周期。</li>
+<li>对线程的优先级使用不当</li>
+<li>在持有锁时执行一些无法结束的结构（例如无限循环，或者无限制地等待某个资源）</li>
+</ul>
+<p>在Thread API中定义的线程优先级只是作为线程调度的参考。在Thread API中定义了10个优先级，JVM根据需要将它们映射到操作系统的调度优先级。这种映射是与特定平台相关的。</p>
+<p>操作系统的线程调度器会尽力提供公平的、活跃性良好的调度，甚至超出Java语言规范的需求范围。在大多数Java应用程序中，所有线程都具有相同的优先级Thread.NORM_PRIORITY。</p>
+<p>通常，我们尽量不要改变线程的优先级。</p>
+<h4 id="糟糕的响应性"><a href="#糟糕的响应性" class="headerlink" title="糟糕的响应性"></a>糟糕的响应性</h4><p>如果由其他线程完成的工作都是后台任务，那么应该降低它们的优先级，从而提高前台程序的响应性。</p>
+<p>不良的锁管理也可能导致糟糕的响应性。</p>
+<h4 id="活锁"><a href="#活锁" class="headerlink" title="活锁"></a>活锁</h4><p>活锁（Livelock）是另一种形式的活跃性问题，该问题尽管不会阻塞线程，但也不能继续执行，因为线程将不断重复执行相同的操作，而且总会失败。</p>
+<blockquote>
+<p>活锁通常发生在处理事务消息的应用程序中：如果不能成功地处理某个消息，那么消息处理机制将回滚整个事务，并将它重新放到队列的开头。如果消息处理器在处理某种特定类型的消息时存在错误并导致它失败，那么每当这个消息从队列中取出并传递到存在错误的处理器时，都会发生事务回滚。由于这条消息又被放回到队列开头，因此处理器将被反复调用，并返回相同的结果。（有时候也被称为毒药消息，Poison Message。）虽然处理消息的线程并没有阻塞，但也无法继续执行下去。这种形式的活锁通常是由过度的错误恢复代码造成的，因为它错误地将不可修复的错误作为可修复的错误。</p>
+</blockquote>
+<p><strong>当多个相互协作的线程都对彼此进行响应从而修改各自的状态，并使得任何一个线程都无法继续执行时，就发生了活锁。</strong></p>
+<blockquote>
+<p>就像两个过于礼貌的人在半路上面对面地相遇：他们彼此都让出对方的路，然而又在另一条路上相遇了。因此他们就这样反复地避让下去。</p>
+</blockquote>
+<p><strong>要解决这种活锁问题，需要在重试机制中引入随机性。</strong>在并发应用程序中，通过等待随机长度的时间和回退可以有效地避免活锁的发生。</p>
+<h3 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h3><ul>
+<li>活跃性故障是一个非常严重的问题，因为当出现活跃性故障时，除了中止应用程序之外没有其他任何机制可以帮助从这种故障时恢复过来。</li>
+<li>最常见的活跃性故障就是锁顺序死锁。</li>
+<li>在设计时应该避免产生锁顺序死锁：确保线程在获取多个锁时采用一致的顺序。</li>
+<li>最好的解决方法是在程序中始终使用开放调用。</li>
+</ul>
+<h2 id="性能与可伸缩性"><a href="#性能与可伸缩性" class="headerlink" title="性能与可伸缩性"></a>性能与可伸缩性</h2><p>线程的最主要目的是提高程序的运行性能。这也是我们不得不忍受线程带来的复杂性的唯一原因。</p>
+<ul>
+<li>线程可以使程序更加充分地发挥系统的可用处理能力，从而提高系统的资源利用率。</li>
+<li>线程还可以使程序在运行现有任务的情况下立即开始处理新的任务，从而提高系统的响应性。</li>
+</ul>
+<p>本章将介绍各种分析、监测以及提升并发程序性能的技术。</p>
+<p>虽然我们希望获得更好的性能——提升性能总会令人满意，但始终要把安全性放在第一位。首先要保证程序能正确运行，然后仅当程序的性能需求和测试结果要求程序执行得更快时，才应该设法提高它的运行速度。</p>
+<h3 id="对性能的思考"><a href="#对性能的思考" class="headerlink" title="对性能的思考"></a>对性能的思考</h3><p>提升性能意味着用更少的资源做更多的事情。</p>
+<p>当操作性能由于某种特定的资源而受到限制时，我们通常将该操作称为<strong>资源密集型</strong>的操作，例如，CPU密集型、数据库密集型等。</p>
+<p>使用多个线程总会引入一些额外的性能开销：</p>
+<ul>
+<li>线程之间的协调（例如加锁、触发信号以及内存同步等）</li>
+<li>增加的上下文切换</li>
+<li>线程的创建和销毁</li>
+<li>线程的调度</li>
+</ul>
+<p>如果过度地使用线程，那么这些开销甚至会超过由于提高吞吐量、响应性或者计算能力所带来的性能提升。另一方面，一个并发设计很糟糕的应用程序，其性能甚至比实现相同功能的串行程序的性能还要差。</p>
+<p>要想通过并发来获得更好的性能，需要努力做好两件事情：</p>
+<ul>
+<li>更有效地利用现有处理资源，</li>
+<li>在出现新的处理资源时使程序尽可能地利用这些新资源。</li>
+</ul>
+<blockquote>
+<p>从性能监视的视角来看，CPU需要尽可能保持忙碌状态。</p>
+<p>通过将应用程序分解到多个线程上执行，使得每个处理器都执行一些工作，从而使所有CPU都保持忙碌状态。</p>
+</blockquote>
+<h4 id="性能与可伸缩性-1"><a href="#性能与可伸缩性-1" class="headerlink" title="性能与可伸缩性"></a>性能与可伸缩性</h4><p>性能可以使用多个维度和指标来衡量。</p>
+<ul>
+<li>运行速度 (即某个指定的任务单元需要“<strong>多快</strong>”才能处理完成)<ul>
+<li>服务时间</li>
+<li>等待时间</li>
+</ul>
+</li>
+<li>处理能力 (即在计算资源一定的情况下，能完成“<strong>多少</strong>”工作)<ul>
+<li>生产量</li>
+<li>吞吐量</li>
+</ul>
+</li>
+</ul>
+<p><strong>可伸缩性指的是：当增加计算资源时，程序的处理能力能相应的增加。</strong></p>
+<p>在并发应用程序中针对可伸缩性进行设计和调整时所采用的方法与传统的性能调优方法截然不同。当进行性能调优时，其目的通常是用更小的代价完成相同的工作，例如通过缓存来重用之前计算的结果，或者采用时间复杂度为O（n2）算法来代替复杂度为O（n log n）的算法。在进行可伸缩性调优时，其目的是设法将问题的计算并行化，从而能利用更多的计算资源来完成更多的工作。</p>
+<p>性能的这两个方面——“多快”和“多少”，是完全独立的，有时候甚至是相互矛盾的。要实现更高的可伸缩性或硬件利用率，通常会增加各个任务所要处理的工作量，例如把任务分解为多个“流水线”子任务时。具有讽刺意味的是，大多数提高单线程程序性能的技术，往往都会破坏可伸缩性。</p>
+<p>单一的应用程序避免了在不同层次之间传递任务时存在的网络延迟，同时也不需要将计算过程分解到不同的抽象层次，因此能减少许多开销（例如在任务排队、线程协调以及数据复制时存在的开销）。然而，当这种单一的系统到达自身处理能力的极限时，会遇到一个严重的问题：要进一步提升它的处理能力将非常困难。</p>
+<p><strong>因此，我们通常会接受每个工作单元执行更长的时间或消耗更多的计算资源，以换取应用程序在增加更多资源的情况下处理更高的负载。</strong></p>
+<p><strong>对于服务器应用程序来说，“多少”这个方面——可伸缩性、吞吐量和生产量，往往比“多快”这个方面更受重视。</strong></p>
+<h4 id="评估各种性能权衡因素"><a href="#评估各种性能权衡因素" class="headerlink" title="评估各种性能权衡因素"></a>评估各种性能权衡因素</h4><p>在大多数性能决策中都包含有多个变量，并且非常依赖于运行环境。在使某个方案比其他方案“更快”之前，首先问自己一些问题：·</p>
+<ul>
+<li>“更快”的含义是什么？</li>
+<li>该方法在什么条件下运行得更快？在低负载还是高负载的情况下？大数据集还是小数据集？能否通过测试结果来验证你的答案？</li>
+<li>这些条件在运行环境中的发生频率？能否通过测试结果来验证你的答案？</li>
+<li>在其他不同条件的环境中能否使用这里的代码？</li>
+<li>在实现这种性能提升时需要付出哪些隐含的代价，例如增加开发风险或维护开销？这种权衡是否合适？</li>
+</ul>
+<p>在对性能的调优时，一定要有明确的性能需求（这样才能知道什么时候需要调优，以及什么时候应该停止），此外还需要一个测试程序以及真实的配置和负载等环境。在对性能调优后，你需要再次测量以验证是否到达了预期的性能提升目标。</p>
+<p>以测试为基准，不要猜测。</p>
+<h3 id="Amdahl-定律"><a href="#Amdahl-定律" class="headerlink" title="Amdahl 定律"></a>Amdahl 定律</h3><p>如果使用线程主要是为了发挥多个处理器的处理能力，那么就必须对问题进行合理的并行分解，并使得程序能有效地使用这种潜在的并行能力。</p>
+<p>Amdahl定律描述的是：在增加计算资源的情况下，程序在理论上能够实现最高加速比，这个值取决于程序中可并行组件与串行组件所占的比重。假定F是必须被串行执行的部分，那么根据Amdahl定律，在包含N个处理器的机器中，最高的加速比为：<br>$$<br>Speedup \leq { 1 \over { F +{(1-F) \over N } } }<br>$$</p>
+<p>当 N 趋向于无穷大时，最大的加速比趋近于 1/F。</p>
+<p>然而，要预测应用程序在某个多处理器系统中将实现多大的加速比，还需要找出任务中的串行部分。</p>
+<p>在所有并发程序中都包含一些串行部分。如果你认为在你的程序中不存在串行部分，那么可以再仔细检查一遍。</p>
+<p>下面的示例展示了串行部分：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">WorkerThread</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">Thread</span> </span>&#123;<br><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> BlockingQueue&lt;Runnable&gt; queue;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">WorkerThread</span><span class="hljs-params">(BlockingQueue&lt;Runnable&gt; queue)</span> </span>&#123;<br>    <span class="hljs-keyword">this</span>.queue = queue;<br>  &#125;<br><br>  <span class="hljs-meta">@Override</span><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> </span>&#123;<br>    <span class="hljs-keyword">while</span> (<span class="hljs-keyword">true</span>) &#123;<br>      <span class="hljs-keyword">try</span> &#123;<br>        Runnable runnable = queue.take();<br>        runnable.run();<br>      &#125; <span class="hljs-keyword">catch</span> (InterruptedException e) &#123;<br>        <span class="hljs-keyword">break</span>;<br>      &#125;<br>    &#125;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>在这个过程中包含了一个串行部分——从队列中获取任务。</p>
+<p>这个示例还忽略了另一种常见的串行操作：对结果进行处理。</p>
+</blockquote>
+<h4 id="Amdahl定律的应用"><a href="#Amdahl定律的应用" class="headerlink" title="Amdahl定律的应用"></a>Amdahl定律的应用</h4><p>如果能准确估计出执行过程中串行部分所占的比例，那么Amdahl定律就能量化当有更多计算资源可用时的加速比。虽然要直接测量串行部分的比例非常困难，但即使在不进行测试的情况下Amdahl定律仍然是有用的。</p>
+<p>在评估一个算法时，要考虑算法在数百个或数千个处理器的情况下的性能表现，从而对可能出现的可伸缩性局限有一定程度的认识。</p>
+<h3 id="线程引入的开销"><a href="#线程引入的开销" class="headerlink" title="线程引入的开销"></a>线程引入的开销</h3><p>在多个线程的调度和协调过程中都需要一定的性能开销：对于为了提升性能而引入的线程来说，并行带来的性能提升必须超过并发导致的开销。</p>
+<h4 id="上下文切换"><a href="#上下文切换" class="headerlink" title="上下文切换"></a>上下文切换</h4><p>如果主线程是唯一的线程，那么它基本上不会被调度出去。另一方面，如果可运行的线程数大于CPU的数量，那么操作系统最终会将某个正在运行的线程调度出来，从而使其他线程能够使用CPU。这将导致一次上下文切换，<strong>在这个过程中将保存当前运行线程的执行上下文，并将新调度进来的线程的执行上下文设置为当前上下文。</strong></p>
+<p>切换上下文需要一定的开销，而在线程调度过程中需要访问由操作系统和JVM共享的数据结构。应用程序、操作系统以及JVM都使用一组相同的CPU。在JVM和操作系统的代码中消耗越多的CPU时钟周期，应用程序的可用CPU时钟周期就越少。但上下文切换的开销并不只是包含JVM和操作系统的开销。当一个新的线程被切换进来时，它所需要的数据可能不在当前处理器的本地缓存中，因此上下文切换将导致一些缓存缺失，因而线程在首次调度运行时会更加缓慢。这就是为什么调度器会为每个可运行的线程分配一个最小执行时间，即使有许多其他的线程正在等待执行：它将上下文切换的开销分摊到更多不会中断的执行时间上，从而提高整体的吞吐量（以损失响应性为代价）。</p>
+<p>当线程由于等待某个发生竞争的锁而被阻塞时，JVM通常会将这个线程挂起，并允许它被交换出去。如果线程频繁地发生阻塞，那么它们将无法使用完整的调度时间片。在程序中发生越多的阻塞（包括阻塞I/O，等待获取发生竞争的锁，或者在条件变量上等待），与CPU密集型的程序就会发生越多的上下文切换，从而增加调度开销，并因此而降低吞吐量。（无阻塞算法同样有助于减小上下文切换。请参见第15章。）</p>
+<p>上下文切换的实际开销会随着平台的不同而变化，然而按照经验来看：在大多数通用的处理器中，上下文切换的开销相当于5 000~10000个时钟周期，也就是几微秒。</p>
+<h4 id="内存同步"><a href="#内存同步" class="headerlink" title="内存同步"></a>内存同步</h4><p>同步操作的性能开销包括多个方面。在synchronized和volatile提供的可见性保证中可能会使用一些特殊指令，即内存栅栏（Memory Barrier）。内存栅栏可以刷新缓存，使缓存无效，刷新硬件的写缓冲，以及停止执行管道。内存栅栏可能同样会对性能带来间接的影响，因为它们将抑制一些编译器优化操作。在内存栅栏中，大多数操作都是不能被重排序的。</p>
+<p>在评估同步操作带来的性能影响时，区分有竞争的同步和无竞争的同步非常重要。synchronized机制针对无竞争的同步进行了优化（volatile通常是非竞争的）。</p>
+<p>现代的JVM能通过优化来去掉一些不会发生竞争的锁，从而减少不必要的同步开销。如果一个锁对象只能由当前线程访问，那么JVM就可以通过优化来去掉这个锁获取操作，因为另一个线程无法与当前线程在这个锁上发生同步。一些更完备的JVM能通过逸出分析（Escape Analysis）来找出不会发布到堆的本地对象引用（因此这个引用是线程本地的）。</p>
+<p>即使不进行逸出分析，编译器也可以执行锁粒度粗化（Lock Coarsening）操作，即将邻近的同步代码块用同一个锁合并起来。</p>
+<p>不要过度担心非竞争同步带来的开销。这个基本的机制已经非常快了，并且JVM还能进行额外的优化以进一步降低或消除开销。因此，我们应该将优化重点放在那些发生锁竞争的地方。</p>
+<p>某个线程中的同步可能会影响其他线程的性能。同步会增加共享内存总线上的通信量，总线的带宽是有限的，并且所有的处理器都将共享这条总线。如果有多个线程竞争同步带宽，那么所有使用了同步的线程都会受到影响。</p>
+<h4 id="阻塞"><a href="#阻塞" class="headerlink" title="阻塞"></a>阻塞</h4><p>非竞争的同步可以完全在JVM中进行处理（Bacon等，1998），而竞争的同步可能需要操作系统的介入，从而增加开销。</p>
+<p>当在锁上发生竞争时，竞争失败的线程肯定会阻塞。JVM在实现阻塞行为时，可以采用<strong>自旋等待</strong>（Spin-Waiting，指通过循环不断地尝试获取锁，直到成功）或者<strong>通过操作系统挂起被阻塞的线程</strong>。</p>
+<p>这两种方式的效率高低，要取决于上下文切换的开销以及在成功获取锁之前需要等待的时间。如果等待时间较短，则适合采用自旋等待方式，而如果等待时间较长，则适合采用线程挂起方式。有些JVM将根据对历史等待时间的分析数据在这两者之间进行选择，但是大多数JVM在等待锁时都只是将线程挂起。</p>
+<p>当线程无法获取某个锁或者由于在某个条件等待或在I/O操作上阻塞时，需要被挂起，在这个过程中将包含两次额外的上下文切换，以及所有必要的操作系统操作和缓存操作：被阻塞的线程在其执行时间片还未用完之前就被交换出去，而在随后当要获取的锁或者其他资源可用时，又再次被切换回来。（由于锁竞争而导致阻塞时，线程在持有锁时将存在一定的开销：当它释放锁时，必须告诉操作系统恢复运行阻塞的线程。）<a href=""></a></p>
+<h3 id="减少锁的竞争"><a href="#减少锁的竞争" class="headerlink" title="减少锁的竞争"></a>减少锁的竞争</h3><p>串行操作会降低可伸缩性，并且上下文切换也会降低性能。在锁上发生竞争时将同时导致这两种问题，因此减少锁的竞争能够提高性能和可伸缩性。</p>
+<p>在并发程序中，对可伸缩性的最主要威胁就是独占方式的资源锁。</p>
+<p>有两个因素将影响在锁上发生竞争的可能性：<strong>锁的请求频率</strong>，以及<strong>每次持有该锁的时间</strong>。</p>
+<p>有三种方式可以降低锁的竞争程度：</p>
+<ul>
+<li><strong>减少锁的持有时间</strong></li>
+<li><strong>减低锁的请求频率</strong></li>
+<li><strong>使用带有协调机制的独占锁</strong></li>
+</ul>
+<h4 id="缩小锁的范围（快进快出）"><a href="#缩小锁的范围（快进快出）" class="headerlink" title="缩小锁的范围（快进快出）"></a>缩小锁的范围（快进快出）</h4><p>降低发生竞争可能性的一种有效方式就是尽可能缩短锁的持有时间。可以将一些与锁无关的代码移出同步代码块，尤其是那些开销较大的操作，以及可能被阻塞的操作，例如I/O操作。</p>
+<p>示例 AttributeStore 将一个不必要的锁持有太长时间。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-meta">@ThreadSafe</span><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AttributeStore</span> </span>&#123;<br><br>  <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Map&lt;String, String&gt; attributes = <span class="hljs-keyword">new</span> HashMap&lt;&gt;();<br><br>  <span class="hljs-meta">@Terrible</span><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">userLocationMatches</span><span class="hljs-params">(String name, String regexp)</span> </span>&#123;<br>    String key = <span class="hljs-string">&quot;users.&quot;</span> + name + <span class="hljs-string">&quot;.location&quot;</span>;<br>    String location = attributes.get(key);<br>    <span class="hljs-keyword">if</span> (location == <span class="hljs-keyword">null</span>) &#123;<br>      <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;<br>    &#125;<br>    <span class="hljs-keyword">return</span> Pattern.matches(regexp, location);<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>BetterAttributeStore中重新编写了AttributeStore，从而大大减少了锁的持有时间。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-meta">@ThreadSafe</span><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BatterAttributeStore</span> </span>&#123;<br><br>  <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Map&lt;String, String&gt; attributes = <span class="hljs-keyword">new</span> HashMap&lt;&gt;();<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">boolean</span> <span class="hljs-title">userLocationMatches</span><span class="hljs-params">(String name, String regexp)</span> </span>&#123;<br>    String key = <span class="hljs-string">&quot;users.&quot;</span> + name + <span class="hljs-string">&quot;.location&quot;</span>;<br>    String location;<br>    <span class="hljs-keyword">synchronized</span> (<span class="hljs-keyword">this</span>) &#123;<br>      location = attributes.get(key);<br>    &#125;<br><br>    <span class="hljs-keyword">if</span> (location == <span class="hljs-keyword">null</span>) &#123;<br>      <span class="hljs-keyword">return</span> <span class="hljs-keyword">false</span>;<br>    &#125;<br>    <span class="hljs-keyword">return</span> Pattern.matches(regexp, location);<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>由于在AttributeStore中只有一个状态变量attributes，因此可以通过将线程安全性委托给其他的类来进一步提升它的性能（参见4.3节）。</p>
+<p>通过用线程安全的Map（Hashtable、synchronizedMap或ConcurrentHashMap）来代替attributes, AttributeStore可以将确保线程安全性的任务委托给顶层的线程安全容器来实现。这样就无须在AttributeStore中采用显式的同步，缩小在访问Map期间锁的范围，并降低了将来的代码维护者无意破坏线程安全性的风险（例如在访问attributes之前忘记获得相应的锁）。</p>
+</blockquote>
+<p>注意：</p>
+<ul>
+<li>尽管缩小同步代码块能提高可伸缩性，但同步代码块也不能过小——一些需要采用原子方式执行的操作（例如对某个不变性条件中的多个变量进行更新）必须包含在一个同步块中。</li>
+<li>同步需要一定的开销，当把一个同步代码块分解为多个同步代码块时（在确保正确性的情况下），反而会对性能提升产生负面影响。（如果JVM执行锁粒度粗化操作，那么可能会将分解的同步块又重新合并起来。）</li>
+<li>在分解同步代码块时，理想的平衡点将与平台相关，但在实际情况中，仅当可以将一些“大量”的计算或阻塞操作从同步代码块中移出时，才应该考虑同步代码块的大小。</li>
+</ul>
+<h4 id="减少锁的粒度"><a href="#减少锁的粒度" class="headerlink" title="减少锁的粒度"></a>减少锁的粒度</h4><p>另一种减小锁的持有时间的方式是降低线程请求锁的频率（从而减小发生竞争的可能性）。</p>
+<p>这可以通过<strong>锁分解</strong>和<strong>锁分段</strong>等技术来实现，在这些技术中将采用多个相互独立的锁来保护独立的状态变量，从而改变这些变量在之前由单个锁来保护的情况。这些技术能减小锁操作的粒度，并能实现更高的可伸缩性，然而，使用的锁越多，那么发生死锁的风险也就越高。</p>
+<p><strong>如果一个锁需要保护多个相互独立的状态变量，那么可以将这个锁分解为多个锁，并且每个锁只保护一个变量，从而提高可伸缩性，并最终降低每个锁被请求的频率。</strong></p>
+<p>示例：ServerStatus中给出了某个数据库服务器的部分监视接口，该数据库维护了当前已登录的用户以及正在执行的请求。当一个用户登录、注销、开始查询或结束查询时，都会调用相应的add和remove等方法来更新ServerStatus对象。这两种类型的信息是完全独立的，ServerStatus甚至可以被分解为两个类，同时确保不会丢失功能。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ServerStatus</span> </span>&#123;<br>  <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> Set&lt;String&gt; users;<br><br>  <span class="hljs-meta">@GuardedBy(&quot;this&quot;)</span><br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> Set&lt;String&gt; queries;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ServerStatus</span><span class="hljs-params">(Set&lt;String&gt; users, Set&lt;String&gt; queries)</span> </span>&#123;<br>    <span class="hljs-keyword">this</span>.users = users;<br>    <span class="hljs-keyword">this</span>.queries = queries;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">addUser</span><span class="hljs-params">(String u)</span> </span>&#123;<br>    users.add(u);<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">addQuery</span><span class="hljs-params">(String q)</span> </span>&#123;<br>    queries.add(q);<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">removeUser</span><span class="hljs-params">(String u)</span> </span>&#123;<br>    users.remove(u);<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">removeQuery</span><span class="hljs-params">(String q)</span> </span>&#123;<br>    queries.remove(q);<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>在对锁进行分解后，每个新的细粒度锁上的访问量将比最初的访问量少。（通过将用户状态和查询状态委托给一个线程安全的Set，而不是使用显式的同步，能隐含地对锁进行分解，因为每个Set都会使用一个不同的锁来保护其状态。）将ServerStatus重新改写为使用锁分解技术：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">ServerStatusWithLockSplitting</span> </span>&#123;<br>  <span class="hljs-meta">@GuardedBy(&quot;users&quot;)</span><br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> Set&lt;String&gt; users;<br><br>  <span class="hljs-meta">@GuardedBy(&quot;queries&quot;)</span><br>  <span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> Set&lt;String&gt; queries;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">ServerStatusWithLockSplitting</span><span class="hljs-params">(Set&lt;String&gt; users, Set&lt;String&gt; queries)</span> </span>&#123;<br>    <span class="hljs-keyword">this</span>.users = users;<br>    <span class="hljs-keyword">this</span>.queries = queries;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">addUser</span><span class="hljs-params">(String u)</span> </span>&#123;<br>    <span class="hljs-keyword">synchronized</span> (users) &#123;<br>      users.add(u);<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">addQuery</span><span class="hljs-params">(String q)</span> </span>&#123;<br>    <span class="hljs-keyword">synchronized</span> (queries) &#123;<br>      queries.add(q);<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">removeUser</span><span class="hljs-params">(String u)</span> </span>&#123;<br>    <span class="hljs-keyword">synchronized</span> (users) &#123;<br>      users.remove(u);<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">synchronized</span> <span class="hljs-keyword">void</span> <span class="hljs-title">removeQuery</span><span class="hljs-params">(String q)</span> </span>&#123;<br>    <span class="hljs-keyword">synchronized</span> (queries) &#123;<br>      queries.remove(q);<br>    &#125;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>如果在锁上存在适中而不是激烈的竞争时，通过将一个锁分解为两个锁，能最大限度地提升性能。如果对竞争并不激烈的锁进行分解，那么在性能和吞吐量等方面带来的提升将非常有限，但是也会提高性能随着竞争提高而下降的拐点值。对竞争适中的锁进行分解时，实际上是把这些锁转变为非竞争的锁，从而有效地提高性能和可伸缩性。</p>
+<h4 id="锁分段"><a href="#锁分段" class="headerlink" title="锁分段"></a>锁分段</h4><p>在某些情况下，可以将锁分解技术进一步扩展为对一组独立对象上的锁进行分解，这种情况被称为锁分段。</p>
+<p>例如，在ConcurrentHashMap的实现中使用了一个包含16个锁的数组，每个锁保护所有散列桶的1/16，其中第N个散列桶由第（N mod 16）个锁来保护。假设散列函数具有合理的分布性，并且关键字能够实现均匀分布，那么这大约能把对于锁的请求减少到原来的1/16。正是这项技术使得ConcurrentHashMap能够支持多达16个并发的写入器。（要使得拥有大量处理器的系统在高访问量的情况下实现更高的并发性，还可以进一步增加锁的数量，但仅当你能证明并发写入线程的竞争足够激烈并需要突破这个限制时，才能将锁分段的数量超过默认的16个。）</p>
+<p>锁分段的一个劣势在于：与采用单个锁来实现独占访问相比，要获取多个锁来实现独占访问将更加困难并且开销更高。难并且开销更高。通常，在执行一个操作时最多只需获取一个锁，但在某些情况下需要加锁整个容器，例如当ConcurrentHashMap需要扩展映射范围，以及重新计算键值的散列值要分布到更大的桶集合中时，就需要获取分段所集合中所有的锁。要获取内置锁的一个集合，能采用的唯一方式是递归。</p>
+<p>示例 StripedMap 中给出了基于散列的Map实现，其中使用了锁分段技术。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><code class="hljs java"><span class="hljs-meta">@ThreadSafe</span><br><span class="hljs-keyword">public</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">StripedMap</span> </span>&#123;<br><br>  <span class="hljs-comment">// Synchronization policy: buckets[n] guarded by locks[n%N_LOCKS]</span><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">int</span> N_LOCKS = <span class="hljs-number">16</span>;<br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Node[] buckets;<br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">final</span> Object[] locks;<br><br>  <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">Node</span> </span>&#123;<br>    Node next;<br>    Object key;<br>    Object value;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-title">StripedMap</span><span class="hljs-params">(<span class="hljs-keyword">int</span> numBuckets)</span> </span>&#123;<br>    buckets = <span class="hljs-keyword">new</span> Node[numBuckets];<br>    locks = <span class="hljs-keyword">new</span> Object[N_LOCKS];<br>    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; N_LOCKS; i++) &#123;<br>      locks[i] = <span class="hljs-keyword">new</span> Object();<br>    &#125;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">private</span> <span class="hljs-keyword">int</span> <span class="hljs-title">hash</span><span class="hljs-params">(Object key)</span> </span>&#123;<br>    <span class="hljs-keyword">return</span> Math.abs(key.hashCode() % buckets.length);<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> Object <span class="hljs-title">get</span><span class="hljs-params">(Object key)</span> </span>&#123;<br>    <span class="hljs-keyword">int</span> hash = hash(key);<br>    <span class="hljs-keyword">synchronized</span> (locks[hash % N_LOCKS]) &#123;<br>      <span class="hljs-keyword">for</span> (Node m = buckets[hash]; m != <span class="hljs-keyword">null</span>; m = m.next) &#123;<br>        <span class="hljs-keyword">if</span> (m.key.equals(key)) &#123;<br>          <span class="hljs-keyword">return</span> m.value;<br>        &#125;<br>      &#125;<br>    &#125;<br>    <span class="hljs-keyword">return</span> <span class="hljs-keyword">null</span>;<br>  &#125;<br><br>  <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title">clear</span><span class="hljs-params">()</span> </span>&#123;<br>    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; buckets.length; i++) &#123;<br>      <span class="hljs-keyword">synchronized</span> (locks[i % N_LOCKS]) &#123;<br>        buckets[i] = <span class="hljs-keyword">null</span>;<br>      &#125;<br>    &#125;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<blockquote>
+<p>StripedMap 拥有N_LOCKS个锁，并且每个锁保护散列桶的一个子集。大多数方法，例如get，都只需要获得一个锁，而有些方法则需要获得所有的锁，但并不要求同时获得，例如clear方法的实现。</p>
+</blockquote>
+<h4 id="避免热点域"><a href="#避免热点域" class="headerlink" title="避免热点域"></a>避免热点域</h4><p>当每个操作都请求多个变量时，锁的粒度将很难降低。这是在性能与可伸缩性之间相互制衡的另一个方面，一些常见的优化措施，例如将一些反复计算的结果缓存起来，都会引入一些“热点域（HotField）”，而这些热点域往往会限制可伸缩性。</p>
+<blockquote>
+<p>当实现HashMap时，你需要考虑如何在size方法中计算Map中的元素数量。最简单的方法就是，在每次调用时都统计一次元素的数量。一种常见的优化措施是，在插入和移除元素时更新一个计数器，虽然这在put和remove等方法中略微增加了一些开销，以确保计数器是最新的值，但这将把size方法的开销从O（n）降低到O（1）。</p>
+<p>在单线程或者采用完全同步的实现中，使用一个独立的计数能很好地提高类似size和isEmpty这些方法的执行速度，但却导致更难以提升实现的可伸缩性，因为每个修改map的操作都需要更新这个共享的计数器。即使使用锁分段技术来实现散列链，那么在对计数器的访问进行同步时，也会重新导致在使用独占锁时存在的可伸缩性问题。一个看似性能优化的措施——缓存size操作的结果，已经变成了一个可伸缩性问题。在这种情况下，计数器也被称为热点域，因为每个导致元素数量发生变化的操作都需要访问它。</p>
+<p>为了避免这个问题，ConcurrentHashMap中的size将对每个分段进行枚举并将每个分段中的元素数量相加，而不是维护一个全局计数。为了避免枚举每个元素，ConcurrentHashMap为每个分段都维护了一个独立的计数，并通过每个分段的锁来维护这个值。</p>
+</blockquote>
+<h4 id="一些替代独占锁的方法"><a href="#一些替代独占锁的方法" class="headerlink" title="一些替代独占锁的方法"></a>一些替代独占锁的方法</h4><p>第三种降低竞争锁的影响的技术就是放弃使用独占锁，从而有助于使用一种友好并发的方式来管理共享状态。例如，使用并发容器、读-写锁、不可变对象以及原子变量。</p>
+<p>ReadWriteLock（请参见第13章）实现了一种在多个读取操作以及单个写入操作情况下的加锁规则：如果多个读取操作都不会修改共享资源，那么这些读取操作可以同时访问该共享资源，但在执行写入操作时必须以独占方式来获取锁。对于读取操作占多数的数据结构，ReadWriteLock能提供比独占锁更高的并发性。而对于只读的数据结构，其中包含的不变性可以完全不需要加锁操作。</p>
+<p>原子变量（请参见第15章）提供了一种方式来降低更新“热点域”时的开销，例如静态计数器、序列发生器、或者对链表数据结构中头节点的引用。原子变量类提供了在整数或者对象引用上的细粒度原子操作（因此可伸缩性更高），并使用了现代处理器中提供的底层并发原语（例如比较并交换[compare-and-swap]）。如果在类中只包含少量的热点域，并且这些域不会与其他变量参与到不变性条件中，那么用原子变量来替代它们能提高可伸缩性。（通过减少算法中的热点域，可以提高可伸缩性——虽然原子变量能降低热点域的更新开销，但并不能完全消除。）</p>
+<h4 id="监测-CPU-的利用率"><a href="#监测-CPU-的利用率" class="headerlink" title="监测 CPU 的利用率"></a>监测 CPU 的利用率</h4><p>当测试可伸缩性时，通常要确保处理器得到充分利用。一些工具，例如UNIX系统上的vmstat和mpstat，或者Windows系统的perfmon，都能给出处理器的“忙碌”状态。</p>
+<p>如果所有CPU的利用率并不均匀（有些CPU在忙碌地运行，而其他CPU却并非如此），那么你的首要目标就是进一步找出程序中的并行性。不均匀的利用率表明大多数计算都是由一小组线程完成的，并且应用程序没有利用其他的处理器。</p>
+<p>如果CPU没有得到充分利用，那么需要找出其中的原因。通常有以下几种原因：</p>
+<ul>
+<li>负载不充足。测试的程序中可能没有足够多的负载，因而可以在测试时增加负载，并检查利用率、响应时间和服务时间等指标的变化。如果产生足够多的负载使应用程序达到饱和，那么可能需要大量的计算机能耗，并且问题可能在于客户端系统是否具有足够的能力，而不是被测试系统。</li>
+<li><code>I/O</code>密集。可以通过<code>iostat</code>或<code>perfmon</code>来判断某个应用程序是否是磁盘<code>I/O</code>密集型的，或者通过监测网络的通信流量级别来判断它是否需要高带宽。</li>
+<li>外部限制。如果应用程序依赖于外部服务，例如数据库或<code>Web</code>服务，那么性能瓶颈可能并不在你自己的代码中。可以使用某个分析工具或数据库管理工具来判断在等待外部服务的结果时需要多少时间。</li>
+<li>锁竞争。使用分析工具可以知道在程序中存在何种程度的锁竞争，以及在哪些锁上存在“激烈的竞争”。</li>
+</ul>
+<p>如果应用程序正在使CPU保持忙碌状态，那么可以使用监视工具来判断是否能通过增加额外的CPU来提升程序的性能。如果CPU的利用率很高，并且总会有可运行的线程在等待CPU，那么当增加更多的处理器时，程序的性能可能会得到提升。</p>
+<h4 id="向对象池说不"><a href="#向对象池说不" class="headerlink" title="向对象池说不"></a>向对象池说不</h4><p>在JVM的早期版本中，对象分配和垃圾回收等操作的执行速度非常慢（与其他事情一样，例如，同步、图形化、JVM启动以及反射等，都是作为实验性技术的第一个版本。）。但在后续的版本中，这些操作的性能得到了极大提高。事实上，现在Java的分配操作已经比C语言的malloc调用更快：在HotSpot l.4.x和5.0中，“new Object”的代码大约只包含10条机器指令。</p>
+<p>在并发应用程序中，对象池的表现更加糟糕。当线程分配新的对象时，基本上不需要在线程之间进行协调，因为对象分配器通常会使用线程本地的内存块，所以不需要在堆数据结构上进行同步。然而，如果这些线程从对象池中请求一个对象，那么就需要通过某种同步来协调对对象池数据结构的访问，从而可能使某个线程被阻塞。如果某个线程由于锁竞争而被阻塞，那么这种阻塞的开销将是内存分配操作开销的数百倍，因此即使对象池带来的竞争很小，也可能形成一个可伸缩性瓶颈。（即使是一个非竞争的同步，所导致的开销也会比分配一个对象的开销大。）虽然这看似是一种性能优化技术，但实际上却会导致可伸缩性问题。对象池有其特定的用途，但对于性能优化来说，用途是有限的。</p>
+<p><strong>通常，对象分配操作的开销比同步的开销更低。</strong></p>
+<h3 id="示例：比较Map的性能"><a href="#示例：比较Map的性能" class="headerlink" title="示例：比较Map的性能"></a>示例：比较Map的性能</h3><p>在单线程环境下，ConcurrentHashMap的性能比同步的HashMap的性能略好一些，但在并发环境中则要好得多。在ConcurrentHashMap的实现中假设，大多数常用的操作都是获取某个已经存在的值，因此它对各种get操作进行了优化从而提供最高的性能和并发性。</p>
+<p>下图给出了几种Map实现在可伸缩上的差异：ConcurrentHashMap、ConcurrentSkipListMap，以及通过synchronizedMap来包装的HashMap和TreeMap。前两种Map是线程安全的，而后两个Map则通过同步封装器来确保线程安全性。每次运行时，将有N个线程并发地执行一个紧凑的循环：选择一个随机的键值，并尝试获取与这个键值相对应的值。如果不存在相应的值，那么将这个值增加到Map的概率为p=0.6，如果存在相应的值，那么删除这个值的概率为p=0.02。这个测试在8路Sparc V880系统上运行，基于Java 6环境，并且在图中给出了将ConcurrentHashMap归一化为单个线程时的吞吐量。（并发容器与同步容器在可伸缩性上的差异比在Java 5.0中更加明显。）</p>
+<p><img src="https://cdn.jsdelivr.net/gh/code-13/cloudimage/images/2021/12/19/20211219154152.png" alt="image-20211219154152417"></p>
+<p>ConcurrentHashMap和ConcurrentSkipListMap的数据显示，它们在线程数量增加时能表现出很好的可伸缩性，并且吞吐量会随着线程数量的增加而增加。</p>
+<p>同步容器的数量并非越多越好。单线程情况下的性能与ConcurrentHashMap的性能基本相当，但当负载情况由非竞争性转变成竞争性时——这里是两个线程，同步容器的性能将变得糟糕。在伸缩性受到锁竞争限制的代码中，这是一种常见的行为。只要竞争程度不高，那么每个操作消耗的时间基本上就是实际执行工作的时间，并且吞吐量会因为线程数的增加而增加。当竞争变得激烈时，每个操作消耗的时间大部分都用于上下文切换和调度延迟，而再加入更多的线程也不会提高太多的吞吐量。</p>
+<h3 id="减少上下文切换的开销"><a href="#减少上下文切换的开销" class="headerlink" title="减少上下文切换的开销"></a>减少上下文切换的开销</h3><p>在许多任务中都包含一些可能被阻塞的操作。当任务在运行和阻塞这两个状态之间转换时，就相当于一次上下文切换。</p>
+<h3 id="小结-1"><a href="#小结-1" class="headerlink" title="小结"></a>小结</h3><ul>
+<li>由于使用线程常常是为了充分利用多个处理器的计算能力，因此在并发程序性能的讨论中，通常更多地将侧重点放在吞吐量和可伸缩性上，而不是服务时间。</li>
+<li>Amdahl定律告诉我们，程序的可伸缩性取决于在所有代码中必须被串行执行的代码比例。</li>
+<li>Java程序中串行操作的主要来源是独占方式的资源锁，因此通常可以通过以下方式来提升可伸缩性：减少锁的持有时间，降低锁的粒度，以及采用非独占的锁或非阻塞锁来代替独占锁。</li>
+</ul>
+
+			<br>
+			<a class="tag-unordered list-link" href="/books/tags/Java/" rel="tag">Java<span class="tag-unordered list-count">5</span></a>, <a class="tag-unordered list-link" href="/books/tags/Java%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E5%AE%9E%E6%88%98/" rel="tag">Java并发编程实战<span class="tag-unordered list-count">5</span></a>, <a class="tag-unordered list-link" href="/books/tags/%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B/" rel="tag">并发编程<span class="tag-unordered list-count">5</span></a>
+		</article>
+	</div>
+	<div class="other">
+		<div class="container">
+			<nav class="post-nav">
+
+    
+         <!-- 先找到与当前文字相同的目录 -->
+            
+            
+                 
+                
+            
+                 
+                 <!-- 在找到当前文章所在的 index -->
+                    
+                    
+                         
+
+                        
+
+                         <!-- 下一篇文章 --> 
+                            <div class="new">
+                                <span>下一章</span>
+                                <a href="/books/3X97NN6.html"> 第四部分 高级主题</a>
+                            </div>
+                        
+
+                    
+                         
+
+                        
+
+                        
+
+                    
+                         
+
+                          <!-- 上一篇文章 --> 
+                            <div class="old">
+                                <span>上一章</span>
+                                <a href="/books/3FCC1JQ.html"> 第二部分 结构化并发应用程序</a>
+                            </div>
+                        
+
+                        
+
+                    
+                         
+
+                        
+
+                        
+
+                    
+                         
+
+                        
+
+                        
+
+                    
+                
+            
+                 
+                
+            
+                 
+                
+            
+                 
+                
+            
+        
+    
+
+    
+        
+    
+
+    
+        
+    
+
+    
+        
+    
+
+    
+        
+    
+
+    
+        
+    
+
+</nav> 
+		</div>
+	</div>
+	<div class="container comment">
+		
+	</div>
+</div>
+		<div class="footer">
+    <div class="container">
+        <div class="footer-content">
+            <div class="footer-left">代号十三</div>
+            <div class="footer-right"> 
+                <div class="footer-links">
+                    
+                        <a href="https://code-13.github.io">Blog</a>
+                    
+                </div>
+                <div calss="footer-copyright">&copy; 2022 代号十三
+                    Using <a rel="noreferrer" href="http://hexo.io/" target="_blank">Hexo</a> 
+                    &amp; <a rel="noreferrer" href="https://github.com/Yet-The-Books/hexo-theme-yet-the-books" target="_blank">Yet The Books</a>
+                </div>
+            </div>  
+        </div>
+    </div>
+</div>
+	</body>
+</html>
